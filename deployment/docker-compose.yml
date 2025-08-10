@@ -1,0 +1,150 @@
+# Docker Compose 版本声明
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库服务
+  # 用于存储法律文档、用户查询记录、系统配置等结构化数据
+  postgres:
+    image: postgres:15                    # 使用 PostgreSQL 15 版本镜像
+    container_name: law-gpt-postgres      # 容器名称，便于管理
+    restart: unless-stopped               # 容器重启策略：除非手动停止，否则自动重启
+    environment:
+      POSTGRES_DB: law_gpt               # 数据库名称
+      POSTGRES_USER: law_user            # 数据库用户名
+      POSTGRES_PASSWORD: law_password    # 数据库密码（生产环境建议使用更强密码）
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"  # 初始化参数
+    ports:
+      - "5432:5432"                      # 端口映射：主机5432端口映射到容器5432端口
+    volumes:
+      - postgres_data:/var/lib/postgresql/data              # 数据持久化存储
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql    # 数据库初始化脚本
+    networks:
+      - law-gpt-network                  # 加入自定义网络
+    healthcheck:                         # 健康检查配置
+      test: ["CMD-SHELL", "pg_isready -U law_user -d law_gpt"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis 缓存服务
+  # 用于缓存查询结果、会话状态、临时数据等，提升系统响应速度
+  redis:
+    image: redis:7-alpine               # 使用轻量级的 Redis 7 Alpine 镜像
+    container_name: law-gpt-redis       # 容器名称
+    restart: unless-stopped             # 容器重启策略
+    ports:
+      - "6379:6379"                     # 端口映射：主机6379端口映射到容器6379端口
+    volumes:
+      - redis_data:/data                # 数据持久化存储
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    # 启动命令配置：
+    # --appendonly yes: 启用AOF持久化
+    # --maxmemory 512mb: 设置最大内存使用量为512MB
+    # --maxmemory-policy allkeys-lru: 内存不足时使用LRU策略清理数据
+    networks:
+      - law-gpt-network                 # 加入自定义网络
+    healthcheck:                        # 健康检查配置
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Milvus 向量数据库服务
+  # 用于存储和检索文档的向量表示，支持高效的相似性搜索
+  milvus:
+    image: milvusdb/milvus:v2.3.4        # 使用 Milvus 2.3.4 版本
+    container_name: law-gpt-milvus       # 容器名称
+    restart: unless-stopped              # 容器重启策略
+    command: ["milvus", "run", "standalone"]  # 以单机模式运行
+    environment:
+      ETCD_ENDPOINTS: etcd:2379          # etcd 连接地址
+      MINIO_ADDRESS: minio:9000          # MinIO 连接地址
+      MINIO_ACCESS_KEY: minioadmin       # MinIO 访问密钥
+      MINIO_SECRET_KEY: minioadmin       # MinIO 秘密密钥
+    ports:
+      - "19530:19530"                    # Milvus gRPC 端口
+      - "9091:9091"                      # Milvus RESTful API 端口（可选）
+    volumes:
+      - milvus_data:/var/lib/milvus      # Milvus 数据持久化存储
+    depends_on:
+      - etcd                             # 依赖 etcd 服务
+      - minio                            # 依赖 MinIO 服务
+    networks:
+      - law-gpt-network                  # 加入自定义网络
+    healthcheck:                         # 健康检查配置
+      test: ["CMD", "curl", "-f", "http://localhost:9091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s                  # Milvus 启动较慢，90秒后开始检查
+
+  # etcd 服务
+  # Milvus 的元数据存储，用于存储集合信息、索引信息等
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5    # 使用 etcd 3.5.5 版本
+    container_name: law-gpt-etcd         # 容器名称
+    restart: unless-stopped              # 容器重启策略
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296  # 4GB
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - etcd_data:/etcd                  # etcd 数据持久化存储
+    ports:
+      - "2379:2379"                      # etcd 客户端端口
+    networks:
+      - law-gpt-network                  # 加入自定义网络
+    healthcheck:                         # 健康检查配置
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO 对象存储服务
+  # Milvus 的数据存储后端，用于存储向量数据和日志文件
+  minio:
+    image: minio/minio:RELEASE.2023-12-07T04-16-00Z  # 使用稳定版本的 MinIO
+    container_name: law-gpt-minio        # 容器名称
+    restart: unless-stopped              # 容器重启策略
+    environment:
+      MINIO_ACCESS_KEY: minioadmin       # MinIO 访问密钥
+      MINIO_SECRET_KEY: minioadmin       # MinIO 秘密密钥
+    command: minio server /data --console-address ":9001"  # 启动 MinIO 服务
+    ports:
+      - "9000:9000"                      # MinIO API 端口
+      - "9001:9001"                      # MinIO 控制台端口
+    volumes:
+      - minio_data:/data                 # MinIO 数据持久化存储
+    networks:
+      - law-gpt-network                  # 加入自定义网络
+    healthcheck:                         # 健康检查配置
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+
+# 数据卷定义
+# 用于持久化存储数据库、缓存和向量数据库数据
+volumes:
+  postgres_data:                        # PostgreSQL 数据存储卷
+    driver: local
+  redis_data:                           # Redis 数据存储卷
+    driver: local
+  milvus_data:                          # Milvus 向量数据库存储卷
+    driver: local
+  etcd_data:                            # etcd 元数据存储卷
+    driver: local
+  minio_data:                           # MinIO 对象存储卷
+    driver: local
+
+# 网络定义
+# 创建自定义网络，确保服务间可以通过服务名相互访问
+networks:
+  law-gpt-network:
+    driver: bridge                      # 使用桥接网络驱动
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16         # 自定义子网，避免网络冲突

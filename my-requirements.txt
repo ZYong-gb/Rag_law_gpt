@@ -1,0 +1,63 @@
+# 法律问答系统依赖文件
+# 生成时间: 2025年 08月 03日 星期日 21:03:31 CST
+
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+pydantic-settings==2.10.1
+langchain==0.3.27
+langchain-community==0.3.27
+langchain-core==0.3.72
+
+# LlamaIndex 统一版本 - 升级到最新兼容版本
+llama-index==0.13.0
+llama-index-core==0.13.0
+llama-index-embeddings-huggingface
+llama-index-llms-huggingface
+llama-index-vector-stores-faiss
+llama-index-readers-file==0.5.0
+llama-index-readers-llama-parse==0.5.0
+llama-index-indices-managed-llama-cloud==0.9.0
+
+# 必需的 OpenAI 包（即使不使用 OpenAI）
+llama-index-embeddings-openai
+llama-index-llms-openai
+
+# LlamaCloud 服务
+llama-cloud-services==0.6.54
+
+# AI 模型包 - 升级版本
+transformers>=4.51.0
+sentence-transformers>=2.7.0
+huggingface-hub>=0.34.0
+accelerate==1.9.0
+torch==2.2.2+cu121
+torchvision==0.17.2+cu121
+torchaudio==2.2.2+cu121
+pymilvus==2.5.14
+numpy==1.26.4
+xformers==0.0.26
+faiss-cpu==1.7.4
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.42
+alembic==1.16.4
+redis==6.2.0
+hiredis==3.2.1
+pypdf==5.9.0
+python-docx==1.2.0
+python-multipart==0.0.20
+python-dotenv==1.1.1
+loguru==0.7.3
+httpx==0.28.1
+requests==2.32.4
+aiofiles==24.1.0
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+prometheus-client==0.22.1
+beautifulsoup4==4.13.4
+scikit-learn==1.7.1
+pandas==2.2.3
+nltk==3.9.1
